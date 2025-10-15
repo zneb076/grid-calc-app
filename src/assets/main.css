@@ -1,0 +1,6 @@
+/* ตรวจสอบให้แน่ใจว่า 3 บรรทัดนี้อยู่ด้านบนสุด */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* โค้ด CSS อื่นๆ (ถ้ามี) */
