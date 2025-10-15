@@ -8,7 +8,7 @@ const priceUpper = ref(130000);
 const priceLower = ref(90000);
 const gridCount = ref(40);
 const capital = ref(500);
-const feeRate = ref(0.0005);
+const feeRate = ref(0.001);
 
 // ---------------------------------
 // 2. Computed Properties สำหรับการคำนวณ
@@ -202,14 +202,14 @@ const priceGapUpper = computed(() => {
         <label
           for="feeRate"
           class="block text-xs font-medium text-gray-600 mb-1"
-          >Fee Rate (0.0005):</label
+          >Fee Rate (0.001):</label
         >
         <input
           id="feeRate"
           type="number"
           v-model.number="feeRate"
           min="0"
-          step="0.00001"
+          step="0.001"
           class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
         />
       </div>
