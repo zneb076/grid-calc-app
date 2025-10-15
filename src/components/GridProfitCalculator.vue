@@ -68,6 +68,30 @@ const netProfitPercentage = computed(() => {
   if (inv === 0) return 0;
   return (netProfit / inv) * 100;
 });
+
+// ช่วงห่างของราคา ณ กริดล่างสุด (เป็นหน่วยเงิน)
+const priceGapLower = computed(() => {
+  const r = ratioPerGrid.value;
+  const lowerPrice = priceLower.value;
+  if (r <= 1 || lowerPrice <= 0) return 0;
+  // สูตร: Price_Lower * (r - 1)
+  return lowerPrice * (r - 1);
+});
+
+// ช่วงห่างของราคา ณ กริดบนสุด (เป็นหน่วยเงิน)
+const priceGapUpper = computed(() => {
+  const r = ratioPerGrid.value;
+  const upperPrice = priceUpper.value;
+  if (r <= 1 || upperPrice <= 0) return 0;
+  // สูตร: Price_Upper - (Price_Upper / r)
+  // หรือประมาณการด้วย: Price_Upper * (r - 1)
+  // (เราจะใช้สูตรที่ง่ายกว่าสำหรับจุดบนสุด: P_current * (r-1))
+
+  // เนื่องจาก r เป็นอัตราส่วนของราคาระหว่างกริดที่ติดกัน
+  // เราจะใช้ Price_Upper / r เพื่อหาราคา ณ กริดก่อนหน้าของจุดบนสุด
+  const priceBeforeUpper = upperPrice / r;
+  return upperPrice - priceBeforeUpper;
+});
 </script>
 
 <template>
@@ -199,6 +223,14 @@ const netProfitPercentage = computed(() => {
       </h3>
 
       <div class="space-y-2 text-sm text-gray-700">
+        <div class="flex justify-between border-b pb-1">
+          <span class="font-medium">ช่วงห่าง/กริด (ณ ราคาล่าง):</span>
+          <span class="font-semibold">{{ priceGapLower.toFixed(2) }} USDT</span>
+        </div>
+        <div class="flex justify-between border-b pb-1">
+          <span class="font-medium">ช่วงห่าง/กริด (ณ ราคาบน):</span>
+          <span class="font-semibold">{{ priceGapUpper.toFixed(2) }} USDT</span>
+        </div>
         <div class="flex justify-between border-b pb-1">
           <span class="font-medium">กำไรสุทธิรวม (Potential):</span>
           <span class="font-semibold"
