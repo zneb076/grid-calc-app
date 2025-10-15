@@ -1,0 +1,50 @@
+name: Deploy to GitHub Pages
+
+on:
+  # สั่งให้รัน Workflow นี้ทุกครั้งที่มีการ Push ไปที่ branch 'main'
+  push:
+    branches:
+      - main
+  # อนุญาตให้รัน Workflow นี้ด้วยตนเองจากหน้า Actions ได้
+  workflow_dispatch:
+
+# กำหนดสิทธิ์ที่จำเป็นในการ Deploy
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest # รันบนเซิร์ฟเวอร์ Linux ของ GitHub
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ติดตั้ง Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20" # ใช้ Node.js เวอร์ชันล่าสุด
+          cache: "npm"
+
+      # ติดตั้ง dependencies และ Build
+      - name: Install dependencies and Build
+        run: |
+          npm install
+          npm run build
+
+      # ตั้งค่า GitHub Pages Environment
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      # อัปโหลด Artifacts (โฟลเดอร์ dist)
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./dist" # โฟลเดอร์ที่ Vite สร้างขึ้น
+
+      # Deploy ไปยัง GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
