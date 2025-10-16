@@ -160,9 +160,7 @@ const priceGapUpper = computed(() => {
 </script>
 
 <template>
-  <div
-    class="grid-calc-container max-w-lg mx-auto p-4 pt-0 bg-gray-50 min-h-screen"
-  >
+  <div class="grid-calc-container max-w-lg mx-auto p-4 bg-gray-50 min-h-screen">
     <h2
       class="app-title text-center text-xl font-semibold text-gray-800 mb-4 pt-4"
     >
