@@ -213,7 +213,7 @@ const priceGapUpper = computed(() => {
           {{ netProfitPercentage.toFixed(4) }} %
         </p>
         <p class="text-sm mt-1" v-if="gridType === 'Arithmetic'">
-          (ระยะแต่ละ grid: {{ priceGapLower.toFixed(2) }})
+          (ระยะแต่ละ grid: {{ priceGapLower.toFixed(4) }})
         </p>
       </div>
     </div>
