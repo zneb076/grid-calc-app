@@ -22,8 +22,12 @@ const capital = ref(getInitialValue("capital", 500));
 const feeRate = ref(getInitialValue("feeRate", 0.0005));
 const currentPrice = ref(getInitialValue("currentPrice", 90000));
 const atrValue = ref(getInitialValue("atrValue", 5000));
-// NEW: สถานะ Ideal Mode (0 = False/Non-Ideal, 1 = True/Ideal)
 const isIdealMode = ref(getInitialValue("isIdealMode", 0));
+
+// ATR Custom Factors
+const factorAggressive = ref(getInitialValue("factorAggressive", 0.25));
+const factorBalanced = ref(getInitialValue("factorBalanced", 0.5));
+const factorConservative = ref(getInitialValue("factorConservative", 1.0));
 
 // ---------------------------------
 // 2. Watcher สำหรับบันทึกค่าลง Local Storage
@@ -38,7 +42,31 @@ watchEffect(() => {
   localStorage.setItem("currentPrice", currentPrice.value);
   localStorage.setItem("atrValue", atrValue.value);
   localStorage.setItem("isIdealMode", isIdealMode.value);
+  // บันทึก Custom Factors
+  localStorage.setItem("factorAggressive", factorAggressive.value);
+  localStorage.setItem("factorBalanced", factorBalanced.value);
+  localStorage.setItem("factorConservative", factorConservative.value);
 });
+
+// ---------------------------------
+// 2.5 Helper Functions สำหรับจัดการ Factor ใน Template (NEW FIX)
+// ---------------------------------
+
+const getFactorRef = (type) => {
+  if (type === "Aggressive") return factorAggressive;
+  if (type === "Balanced") return factorBalanced;
+  if (type === "Conservative") return factorConservative;
+  return ref(0);
+};
+
+const updateFactor = (type, value) => {
+  const factorRef = getFactorRef(type);
+  const numValue = Number(value);
+  // ตรวจสอบความถูกต้องของตัวเลข
+  if (!isNaN(numValue) && numValue >= 0.01) {
+    factorRef.value = numValue;
+  }
+};
 
 // ---------------------------------
 // 3. Computed Properties หลัก (Logic การคำนวณ)
@@ -145,11 +173,10 @@ const priceGapUpper = computed(() => {
 // 4. Logic คำนวณ ATR Recommendations และ Risk Adjustment
 // ---------------------------------
 const typeLabels = {
-  Aggressive: "1. Aggressive",
-  Balanced: "2. Balanced",
-  Conservative: "3. Conservative",
+  Aggressive: "1. เน้นซิ่ง (Aggressive)",
+  Balanced: "2. บาลานซ์ (Balanced)",
+  Conservative: "3. ปลอดภัย (Conservative)",
 };
-// Factor ลดทอนผลลัพธ์ที่ไม่ใช่ Ideal (ลดลง 40% เหลือ 60%)
 const RISK_ADJUSTMENT_FACTOR = 0.6;
 
 const calculateAtrGrid = (recommendedGap) => {
@@ -200,16 +227,14 @@ const calculateAtrGrid = (recommendedGap) => {
   const profitPerDayIdeal = netProfit * (atrValue.value / recommendedGap);
   const expectedTradesIdeal = atrValue.value / recommendedGap;
 
-  // NEW: การปรับลดผลลัพธ์ตามสถานะ Ideal Mode
   const adjustmentFactor = isIdealMode.value ? 1.0 : RISK_ADJUSTMENT_FACTOR;
 
   // --- ผลลัพธ์สุดท้ายที่ปรับปรุงแล้ว ---
   return {
     grids: recommendedGrids,
-    netProfit: netProfit, // Net Profit/Grid และ % ไม่ถูกปรับ
+    netProfit: netProfit,
     netProfitPct: netProfitPct,
 
-    // ถูกปรับลด 40% ถ้าไม่ใช่ Ideal Mode
     profitPerDay: profitPerDayIdeal * adjustmentFactor,
     expectedTrades: expectedTradesIdeal * adjustmentFactor,
 
@@ -221,15 +246,17 @@ const calculateAtrGrid = (recommendedGap) => {
 const atrRecommendations = computed(() => {
   if (atrValue.value <= 0 || priceUpper.value <= priceLower.value) return {};
 
+  // ใช้ค่าจาก Custom Factors ที่ผู้ใช้กรอก
   const factors = {
-    Aggressive: 0.25,
-    Balanced: 0.5,
-    Conservative: 1.0,
+    Aggressive: factorAggressive.value,
+    Balanced: factorBalanced.value,
+    Conservative: factorConservative.value,
   };
 
   const results = {};
   for (const [key, factor] of Object.entries(factors)) {
-    const recommendedGap = atrValue.value * factor;
+    const validFactor = factor > 0 ? factor : 0.01; // ป้องกัน Factor เป็น 0
+    const recommendedGap = atrValue.value * validFactor;
     const result = calculateAtrGrid(recommendedGap);
     results[key] = result;
   }
@@ -468,7 +495,7 @@ const atrRecommendations = computed(() => {
           }"
         >
           <p
-            class="font-bold text-sm mb-1"
+            class="font-bold text-sm mb-1 flex justify-between items-center"
             :class="{
               'text-red-700': type === 'Aggressive',
               'text-green-700': type === 'Balanced',
@@ -476,36 +503,58 @@ const atrRecommendations = computed(() => {
             }"
           >
             {{ typeLabels[type] }}
-            <span class="float-right text-xs font-normal">
-              Gap: {{ result.recommendedGap.toFixed(2) }}
+            <span class="float-right text-xs font-normal flex items-center">
+              <input
+                :id="'factor' + type"
+                type="number"
+                :value="getFactorRef(type).value"
+                @input="updateFactor(type, $event.target.value)"
+                min="0.01"
+                step="0.01"
+                class="w-16 p-1 border rounded-lg text-sm text-center font-bold"
+                :class="{
+                  'border-red-400 focus:ring-red-500': type === 'Aggressive',
+                  'border-green-400 focus:ring-green-500': type === 'Balanced',
+                  'border-blue-400 focus:ring-blue-500':
+                    type === 'Conservative',
+                }"
+              />
+              <span class="ml-1">x ATR</span>
             </span>
           </p>
+
+          <div class="text-sm text-gray-700 mb-2 mt-2 text-right">
+            <span class="font-medium">Gap :</span>
+            <span class="font-semibold">{{
+              result.recommendedGap.toFixed(2)
+            }}</span>
+          </div>
 
           <div
             class="flex justify-between items-end border-t border-dotted pt-2"
           >
             <div class="text-gray-600 text-sm">
-              <p class="font-medium">ทุน/ไม้ :</p>
-              <p class="font-medium">จำนวน Grids :</p>
-              <p class="font-medium">Cash Flow/วัน :</p>
-              <p class="font-medium">กี่ไม้/วัน :</p>
+              <p class="font-medium">ทุน/ไม้:</p>
+              <p class="font-medium">Grids:</p>
+              <p class="font-medium">Profit/Day:</p>
+              <p class="font-medium">Trades/Day (Expected):</p>
             </div>
             <div class="text-right text-sm">
-              <p class="font-semibold text-gray-800">
+              <p class="font-bold text-base text-gray-800">
                 {{ result.investmentPerGrid.toFixed(2) }} USDT
               </p>
-              <p class="font-semibold">{{ result.grids }}</p>
-              <p class="font-semibold text-purple-700">
-                ~ {{ result.profitPerDay.toFixed(2) }} USDT
+              <p class="font-bold text-base">{{ result.grids }}</p>
+              <p class="font-bold text-base text-purple-700">
+                {{ result.profitPerDay.toFixed(2) }} USDT
               </p>
               <p
-                class="font-semibold"
+                class="font-bold text-base"
                 :class="{
                   'text-red-500': !isIdealMode,
                   'text-green-600': isIdealMode,
                 }"
               >
-                ~ {{ result.expectedTrades.toFixed(1) }}
+                {{ result.expectedTrades.toFixed(1) }}
               </p>
             </div>
           </div>
