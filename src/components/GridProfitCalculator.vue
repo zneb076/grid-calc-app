@@ -5,9 +5,7 @@ import { ref, computed, watchEffect } from "vue";
 // 1. สถานะเริ่มต้นและการดึงจาก Local Storage
 // ---------------------------------
 const getInitialValue = (key, defaultValue) => {
-  // ดึงค่าจาก Local Storage, แปลงเป็นตัวเลข ถ้าไม่มีให้ใช้ค่าเริ่มต้น
   const saved = localStorage.getItem(key);
-  // ตรวจสอบว่าเป็น string '0' หรือไม่ ก่อนแปลงเป็น Number
   return saved !== null ? Number(saved) : defaultValue;
 };
 const getInitialString = (key, defaultValue) => {
@@ -15,15 +13,15 @@ const getInitialString = (key, defaultValue) => {
   return saved !== null ? saved : defaultValue;
 };
 
-// ใช้ Local Storage สำหรับค่าเริ่มต้น
+// ใช้ Local Storage สำหรับค่าเริ่มต้น (Arithmetic เป็น Default)
 const gridType = ref(getInitialString("gridType", "Arithmetic"));
 const priceUpper = ref(getInitialValue("priceUpper", 130000));
 const priceLower = ref(getInitialValue("priceLower", 90000));
 const gridCount = ref(getInitialValue("gridCount", 40));
 const capital = ref(getInitialValue("capital", 500));
 const feeRate = ref(getInitialValue("feeRate", 0.0005));
-// ใช้ PriceLower เป็นค่าเริ่มต้นสำหรับราคาอ้างอิง
 const currentPrice = ref(getInitialValue("currentPrice", 90000));
+const atrValue = ref(getInitialValue("atrValue", 5000));
 
 // ---------------------------------
 // 2. Watcher สำหรับบันทึกค่าลง Local Storage
@@ -36,18 +34,17 @@ watchEffect(() => {
   localStorage.setItem("capital", capital.value);
   localStorage.setItem("feeRate", feeRate.value);
   localStorage.setItem("currentPrice", currentPrice.value);
+  localStorage.setItem("atrValue", atrValue.value);
 });
 
 // ---------------------------------
-// 3. Computed Properties หลัก (รองรับ 2 Grid Type)
+// 3. Computed Properties หลัก (Logic การคำนวณ)
 // ---------------------------------
 
-// อัตราส่วนการเติบโต (r) หรือ ระยะห่างที่เป็นเงิน (gap)
 const gridMetrics = computed(() => {
   if (priceUpper.value <= priceLower.value || gridCount.value <= 0) {
     return { ratio: 1, gap: 0 };
   }
-
   const priceRange = priceUpper.value - priceLower.value;
   const numGrids = gridCount.value;
 
@@ -56,31 +53,25 @@ const gridMetrics = computed(() => {
     const ratio = Math.pow(R, 1 / numGrids);
     return { ratio: ratio, gap: 0 };
   } else {
-    // Arithmetic Grid: ระยะห่างที่เป็นหน่วยเงิน
     const gap = priceRange / numGrids;
     return { ratio: 1, gap: gap };
   }
 });
 
-// เงินลงทุนต่อกริด (Investment per Grid)
 const investmentPerGrid = computed(() => {
   if (gridCount.value <= 0) return 0;
   return capital.value / gridCount.value;
 });
 
-// ราคาเฉลี่ยของช่วง (ใช้สำหรับ Quantity และ Fee ใน Arithmetic)
 const priceAverage = computed(() => (priceUpper.value + priceLower.value) / 2);
 
-// 4. ปริมาณเหรียญที่ซื้อต่อกริด (Quantity per Grid)
 const quantityPerGrid = computed(() => {
   const inv = investmentPerGrid.value;
   let priceRef = 0;
 
   if (gridType.value === "Arithmetic") {
-    // Arithmetic: ใช้ราคาเฉลี่ยเป็นราคาอ้างอิงเพื่อให้ Quantity มีค่าคงที่ที่แม่นยำขึ้น
     priceRef = priceAverage.value;
   } else {
-    // Geometric: ใช้ราคาอ้างอิงที่กรอก หรือ Price Lower เป็นค่าเริ่มต้น
     priceRef = currentPrice.value > 0 ? currentPrice.value : priceLower.value;
   }
 
@@ -88,44 +79,35 @@ const quantityPerGrid = computed(() => {
   return inv / priceRef;
 });
 
-// 5. กำไรขั้นต้นต่อไม้ (Gross Profit per Grid)
 const grossProfitPerGrid = computed(() => {
   const inv = investmentPerGrid.value;
 
   if (gridType.value === "Geometric") {
     const r = gridMetrics.value.ratio;
     if (r <= 1) return 0;
-    // Geometric: Inv * (r - 1)
     return inv * (r - 1);
   } else {
-    // Arithmetic: Gross Profit = Quantity * Price Gap
     const gap = gridMetrics.value.gap;
     const qty = quantityPerGrid.value;
     return qty * gap;
   }
 });
 
-// 6. ค่าธรรมเนียมรวมต่อไม้ (Total Fee per Grid)
 const totalFeePerGrid = computed(() => {
-  const inv = investmentPerGrid.value;
   const fee = feeRate.value;
+  const inv = investmentPerGrid.value;
 
   if (gridType.value === "Geometric") {
     const r = gridMetrics.value.ratio;
-    // Geometric: Inv * Fee * (1 + r)
     return inv * fee * (1 + r);
   } else {
-    // Arithmetic: Total Fee ≈ 2 * (Quantity * Price_Avg) * Fee_Rate
     const qty = quantityPerGrid.value;
     const avgPrice = priceAverage.value;
     const avgTradeVolume = qty * avgPrice;
-
-    // 2 * (มูลค่าเทรดเฉลี่ย) * Fee Rate (สำหรับการซื้อ 1 ขาย 1)
     return 2 * avgTradeVolume * fee;
   }
 });
 
-// 7. กำไรสุทธิต่อไม้ และอื่นๆ
 const netProfitPerGrid = computed(
   () => grossProfitPerGrid.value - totalFeePerGrid.value
 );
@@ -139,7 +121,6 @@ const netProfitPercentage = computed(() => {
   return (netProfit / inv) * 100;
 });
 
-// ช่วงห่างของราคา ณ กริดล่างสุด
 const priceGapLower = computed(() => {
   if (gridType.value === "Geometric") {
     return priceLower.value * (gridMetrics.value.ratio - 1);
@@ -148,7 +129,6 @@ const priceGapLower = computed(() => {
   }
 });
 
-// ช่วงห่างของราคา ณ กริดบนสุด
 const priceGapUpper = computed(() => {
   if (gridType.value === "Geometric") {
     const r = gridMetrics.value.ratio;
@@ -156,6 +136,93 @@ const priceGapUpper = computed(() => {
   } else {
     return gridMetrics.value.gap;
   }
+});
+
+// ---------------------------------
+// 4. Logic คำนวณ ATR Recommendations และ คำแปล
+// ---------------------------------
+const typeLabels = {
+  Aggressive: "1. เน้นซิ่ง (Aggressive)",
+  Balanced: "2. บาลานซ์ (Balanced)",
+  Conservative: "3. ปลอดภัย (Conservative)",
+};
+
+const calculateAtrGrid = (recommendedGap) => {
+  const range = priceUpper.value - priceLower.value;
+
+  if (
+    recommendedGap <= 0 ||
+    range <= 0 ||
+    capital.value <= 0 ||
+    gridCount.value <= 0
+  ) {
+    return {
+      grids: 0,
+      netProfit: 0,
+      netProfitPct: 0,
+      profitPerDay: 0,
+      expectedTrades: 0,
+      recommendedGap: 0,
+      investmentPerGrid: 0,
+    };
+  }
+
+  const recommendedGrids = Math.floor(range / recommendedGap);
+
+  if (recommendedGrids === 0) {
+    return {
+      grids: 0,
+      netProfit: 0,
+      netProfitPct: 0,
+      profitPerDay: 0,
+      expectedTrades: 0,
+      recommendedGap: recommendedGap,
+      investmentPerGrid: 0,
+    };
+  }
+
+  // --- คำนวณ Profit/Fee โดยใช้ Grid ใหม่ ---
+  const inv = capital.value / recommendedGrids;
+  const fee = feeRate.value;
+  const priceAvgValue = priceAverage.value;
+
+  const qty = inv / priceAvgValue;
+  const grossProfit = qty * recommendedGap;
+  const totalFee = 2 * (qty * priceAvgValue) * fee;
+  const netProfit = grossProfit - totalFee;
+  const netProfitPct = (netProfit / inv) * 100;
+
+  const profitPerDay = netProfit * (atrValue.value / recommendedGap);
+  const expectedTrades = atrValue.value / recommendedGap;
+
+  return {
+    grids: recommendedGrids,
+    netProfit: netProfit,
+    netProfitPct: netProfitPct,
+    profitPerDay: profitPerDay,
+    expectedTrades: expectedTrades,
+    recommendedGap: recommendedGap,
+    investmentPerGrid: inv,
+  };
+};
+
+const atrRecommendations = computed(() => {
+  if (atrValue.value <= 0 || priceUpper.value <= priceLower.value) return {};
+
+  const factors = {
+    Aggressive: 0.25,
+    Balanced: 0.5,
+    Conservative: 1.0,
+  };
+
+  const results = {};
+  for (const [key, factor] of Object.entries(factors)) {
+    const recommendedGap = atrValue.value * factor;
+    const result = calculateAtrGrid(recommendedGap);
+    results[key] = result;
+  }
+
+  return results;
 });
 </script>
 
@@ -199,12 +266,16 @@ const priceGapUpper = computed(() => {
         กำไรสุทธิ/ไม้ (Net Profit/Grid)
       </p>
       <div
-        class="metric-display p-4 rounded-lg text-white text-center"
+        class="metric-display p-3 rounded-lg text-white text-center"
         :class="{
           'bg-green-600': netProfitPerGrid > 0,
           'bg-red-600': netProfitPerGrid <= 0,
         }"
       >
+        <p class="text-sm font-semibold mb-1">
+          ทุนต่อไม้: {{ investmentPerGrid.toFixed(2) }} USDT
+        </p>
+
         <p class="text-4xl font-bold leading-none">
           {{ netProfitPerGrid.toFixed(4) }}
           <span class="text-base font-normal align-top ml-1">USDT</span>
@@ -212,8 +283,9 @@ const priceGapUpper = computed(() => {
         <p class="text-lg font-medium mt-1">
           {{ netProfitPercentage.toFixed(4) }} %
         </p>
-        <p class="text-sm mt-1" v-if="gridType === 'Arithmetic'">
-          (ระยะแต่ละ grid: {{ priceGapLower.toFixed(4) }})
+
+        <p class="text-sm font-semibold mt-1" v-if="gridType === 'Arithmetic'">
+          (Gap: {{ priceGapLower.toFixed(2) }} USDT)
         </p>
       </div>
     </div>
@@ -323,13 +395,100 @@ const priceGapUpper = computed(() => {
           />
         </div>
       </div>
+
+      <div class="input-group fee-rate-group">
+        <label
+          for="atrValue"
+          class="block text-xs font-medium text-gray-600 mb-1"
+          >ATR (Average True Range, เช่น TF 1D):</label
+        >
+        <input
+          id="atrValue"
+          type="number"
+          v-model.number="atrValue"
+          min="0"
+          step="any"
+          class="w-full p-2 border border-gray-300 rounded-lg text-sm font-bold focus:ring-purple-500 focus:border-purple-500"
+        />
+      </div>
     </div>
 
     <hr class="border-gray-300 my-4" />
 
+    <div
+      class="result-box detail-result bg-white p-4 rounded-xl shadow-lg mb-4"
+    >
+      <h3 class="text-lg font-medium text-center text-gray-700 mb-3">
+        2. ATR Grid Recommendations ({{ priceUpper - priceLower }} USDT Range)
+      </h3>
+
+      <div v-if="atrValue > 0 && priceUpper > priceLower" class="space-y-3">
+        <div
+          v-for="(result, type) in atrRecommendations"
+          :key="type"
+          class="border rounded-lg p-3"
+          :class="{
+            'border-red-400 bg-red-50': type === 'Aggressive',
+            'border-green-400 bg-green-50': type === 'Balanced',
+            'border-blue-400 bg-blue-50': type === 'Conservative',
+          }"
+        >
+          <p
+            class="font-bold text-sm mb-1"
+            :class="{
+              'text-red-700': type === 'Aggressive',
+              'text-green-700': type === 'Balanced',
+              'text-blue-700': type === 'Conservative',
+            }"
+          >
+            {{ typeLabels[type] }}
+            <span class="float-right text-xs font-normal">
+              Gap: {{ result.recommendedGap.toFixed(2) }} USDT
+            </span>
+          </p>
+
+          <div
+            class="flex justify-between items-end border-t border-dotted pt-2"
+          >
+            <div class="text-gray-600 text-sm">
+              <p class="font-medium">ทุน/ไม้:</p>
+              <p class="font-medium">Grids:</p>
+              <p class="font-medium">Profit/Day:</p>
+              <p class="font-medium">Trades/Day (Expected):</p>
+            </div>
+            <div class="text-right text-sm">
+              <p class="font-bold text-gray-800">
+                {{ result.investmentPerGrid.toFixed(2) }} USDT
+              </p>
+              <p class="font-bold">{{ result.grids }}</p>
+              <p class="font-bold text-purple-700">
+                {{ result.profitPerDay.toFixed(2) }} USDT
+              </p>
+              <p class="font-bold text-red-500">
+                {{ result.expectedTrades.toFixed(1) }}
+              </p>
+            </div>
+          </div>
+
+          <div class="text-right mt-1 pt-1 border-t border-dotted">
+            <p class="text-sm">
+              Net Profit/Grid:
+              <span class="font-bold"
+                >{{ result.netProfit.toFixed(4) }} USDT</span
+              >
+              ({{ result.netProfitPct.toFixed(2) }}%)
+            </p>
+          </div>
+        </div>
+      </div>
+      <div v-else class="text-center text-gray-500 py-4 text-sm">
+        โปรดกรอก ATR และกำหนดช่วงราคาเพื่อดูคำแนะนำ
+      </div>
+    </div>
+
     <div class="result-box detail-result bg-white p-4 rounded-xl shadow-lg">
-      <h3 class="text-lg font-medium text-gray-700 mb-3 text-center">
-        2. รายละเอียดการคำนวณ
+      <h3 class="text-lg font-medium text-center text-gray-700 mb-3">
+        3. รายละเอียดการคำนวณ
       </h3>
 
       <div class="space-y-2 text-sm text-gray-700">
@@ -391,5 +550,4 @@ const priceGapUpper = computed(() => {
 
 <style scoped>
 /* ไม่มีสไตล์ scoped อีกต่อไป Tailwind จัดการทุกอย่างแล้ว */
-/* แต่เรายังต้องคงโค้ดส่วนนี้ไว้เพื่อไม่ให้เกิด error */
 </style>
