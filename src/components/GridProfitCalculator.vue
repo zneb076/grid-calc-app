@@ -477,7 +477,7 @@ const atrRecommendations = computed(() => {
           >
             {{ typeLabels[type] }}
             <span class="float-right text-xs font-normal">
-              Gap: {{ result.recommendedGap.toFixed(2) }} USDT
+              Gap: {{ result.recommendedGap.toFixed(2) }}
             </span>
           </p>
 
@@ -485,10 +485,10 @@ const atrRecommendations = computed(() => {
             class="flex justify-between items-end border-t border-dotted pt-2"
           >
             <div class="text-gray-600 text-sm">
-              <p class="font-medium">ทุน/ไม้:</p>
-              <p class="font-medium">Grids:</p>
-              <p class="font-medium">Profit/Day:</p>
-              <p class="font-medium">Trades/Day (Expected):</p>
+              <p class="font-medium">ทุน/ไม้ :</p>
+              <p class="font-medium">จำนวน Grids :</p>
+              <p class="font-medium">Cash Flow/วัน :</p>
+              <p class="font-medium">กี่ไม้/วัน :</p>
             </div>
             <div class="text-right text-sm">
               <p class="font-semibold text-gray-800">
@@ -496,7 +496,7 @@ const atrRecommendations = computed(() => {
               </p>
               <p class="font-semibold">{{ result.grids }}</p>
               <p class="font-semibold text-purple-700">
-                {{ result.profitPerDay.toFixed(2) }} USDT
+                ~ {{ result.profitPerDay.toFixed(2) }} USDT
               </p>
               <p
                 class="font-semibold"
@@ -505,7 +505,7 @@ const atrRecommendations = computed(() => {
                   'text-green-600': isIdealMode,
                 }"
               >
-                {{ result.expectedTrades.toFixed(1) }}
+                ~ {{ result.expectedTrades.toFixed(1) }}
               </p>
             </div>
           </div>
