@@ -145,9 +145,9 @@ const priceGapUpper = computed(() => {
 // 4. Logic คำนวณ ATR Recommendations และ Risk Adjustment
 // ---------------------------------
 const typeLabels = {
-  Aggressive: "1. เน้นซิ่ง (Aggressive)",
-  Balanced: "2. บาลานซ์ (Balanced)",
-  Conservative: "3. ปลอดภัย (Conservative)",
+  Aggressive: "1. Aggressive",
+  Balanced: "2. Balanced",
+  Conservative: "3. Conservative",
 };
 // Factor ลดทอนผลลัพธ์ที่ไม่ใช่ Ideal (ลดลง 40% เหลือ 60%)
 const RISK_ADJUSTMENT_FACTOR = 0.6;
