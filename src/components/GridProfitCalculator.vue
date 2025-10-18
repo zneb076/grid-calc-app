@@ -13,15 +13,17 @@ const getInitialString = (key, defaultValue) => {
   return saved !== null ? saved : defaultValue;
 };
 
-// ใช้ Local Storage สำหรับค่าเริ่มต้น (Arithmetic เป็น Default)
+// ค่าเริ่มต้น
 const gridType = ref(getInitialString("gridType", "Arithmetic"));
 const priceUpper = ref(getInitialValue("priceUpper", 130000));
 const priceLower = ref(getInitialValue("priceLower", 90000));
 const gridCount = ref(getInitialValue("gridCount", 40));
 const capital = ref(getInitialValue("capital", 500));
-const feeRate = ref(getInitialValue("feeRate", 0.001));
+const feeRate = ref(getInitialValue("feeRate", 0.0005));
 const currentPrice = ref(getInitialValue("currentPrice", 90000));
-const atrValue = ref(getInitialValue("atrValue", 200));
+const atrValue = ref(getInitialValue("atrValue", 5000));
+// NEW: สถานะ Ideal Mode (0 = False/Non-Ideal, 1 = True/Ideal)
+const isIdealMode = ref(getInitialValue("isIdealMode", 0));
 
 // ---------------------------------
 // 2. Watcher สำหรับบันทึกค่าลง Local Storage
@@ -35,6 +37,7 @@ watchEffect(() => {
   localStorage.setItem("feeRate", feeRate.value);
   localStorage.setItem("currentPrice", currentPrice.value);
   localStorage.setItem("atrValue", atrValue.value);
+  localStorage.setItem("isIdealMode", isIdealMode.value);
 });
 
 // ---------------------------------
@@ -139,13 +142,15 @@ const priceGapUpper = computed(() => {
 });
 
 // ---------------------------------
-// 4. Logic คำนวณ ATR Recommendations และ คำแปล
+// 4. Logic คำนวณ ATR Recommendations และ Risk Adjustment
 // ---------------------------------
 const typeLabels = {
   Aggressive: "1. เน้นซิ่ง (Aggressive)",
   Balanced: "2. บาลานซ์ (Balanced)",
   Conservative: "3. ปลอดภัย (Conservative)",
 };
+// Factor ลดทอนผลลัพธ์ที่ไม่ใช่ Ideal (ลดลง 40% เหลือ 60%)
+const RISK_ADJUSTMENT_FACTOR = 0.6;
 
 const calculateAtrGrid = (recommendedGap) => {
   const range = priceUpper.value - priceLower.value;
@@ -181,7 +186,7 @@ const calculateAtrGrid = (recommendedGap) => {
     };
   }
 
-  // --- คำนวณ Profit/Fee โดยใช้ Grid ใหม่ ---
+  // --- คำนวณ Ideal Values ---
   const inv = capital.value / recommendedGrids;
   const fee = feeRate.value;
   const priceAvgValue = priceAverage.value;
@@ -192,15 +197,22 @@ const calculateAtrGrid = (recommendedGap) => {
   const netProfit = grossProfit - totalFee;
   const netProfitPct = (netProfit / inv) * 100;
 
-  const profitPerDay = netProfit * (atrValue.value / recommendedGap);
-  const expectedTrades = atrValue.value / recommendedGap;
+  const profitPerDayIdeal = netProfit * (atrValue.value / recommendedGap);
+  const expectedTradesIdeal = atrValue.value / recommendedGap;
 
+  // NEW: การปรับลดผลลัพธ์ตามสถานะ Ideal Mode
+  const adjustmentFactor = isIdealMode.value ? 1.0 : RISK_ADJUSTMENT_FACTOR;
+
+  // --- ผลลัพธ์สุดท้ายที่ปรับปรุงแล้ว ---
   return {
     grids: recommendedGrids,
-    netProfit: netProfit,
+    netProfit: netProfit, // Net Profit/Grid และ % ไม่ถูกปรับ
     netProfitPct: netProfitPct,
-    profitPerDay: profitPerDay,
-    expectedTrades: expectedTrades,
+
+    // ถูกปรับลด 40% ถ้าไม่ใช่ Ideal Mode
+    profitPerDay: profitPerDayIdeal * adjustmentFactor,
+    expectedTrades: expectedTradesIdeal * adjustmentFactor,
+
     recommendedGap: recommendedGap,
     investmentPerGrid: inv,
   };
@@ -422,6 +434,28 @@ const atrRecommendations = computed(() => {
         2. ATR Grid Recommendations ({{ priceUpper - priceLower }} USDT Range)
       </h3>
 
+      <div
+        class="flex items-center mt-2 mb-3 px-2 py-1 bg-gray-100 rounded-lg border border-gray-200"
+      >
+        <input
+          id="idealMode"
+          type="checkbox"
+          v-model.number="isIdealMode"
+          class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+        />
+        <label
+          for="idealMode"
+          class="ml-2 block text-sm font-medium text-gray-700"
+        >
+          แสดงผลในอุดมคติ (Ideal Mode)
+          <span
+            v-if="!isIdealMode"
+            class="text-xs text-red-500 ml-1 font-semibold"
+            ><br />(ไม่ติ้ก = แสดงผลลัพธ์ลดลง 40%)</span
+          >
+        </label>
+      </div>
+
       <div v-if="atrValue > 0 && priceUpper > priceLower" class="space-y-3">
         <div
           v-for="(result, type) in atrRecommendations"
@@ -457,14 +491,20 @@ const atrRecommendations = computed(() => {
               <p class="font-medium">Trades/Day (Expected):</p>
             </div>
             <div class="text-right text-sm">
-              <p class="font-bold text-gray-800">
+              <p class="font-semibold text-gray-800">
                 {{ result.investmentPerGrid.toFixed(2) }} USDT
               </p>
-              <p class="font-bold">{{ result.grids }}</p>
-              <p class="font-bold text-purple-700">
+              <p class="font-semibold">{{ result.grids }}</p>
+              <p class="font-semibold text-purple-700">
                 {{ result.profitPerDay.toFixed(2) }} USDT
               </p>
-              <p class="font-bold text-red-500">
+              <p
+                class="font-semibold"
+                :class="{
+                  'text-red-500': !isIdealMode,
+                  'text-green-600': isIdealMode,
+                }"
+              >
                 {{ result.expectedTrades.toFixed(1) }}
               </p>
             </div>
