@@ -19,9 +19,9 @@ const priceUpper = ref(getInitialValue("priceUpper", 130000));
 const priceLower = ref(getInitialValue("priceLower", 90000));
 const gridCount = ref(getInitialValue("gridCount", 40));
 const capital = ref(getInitialValue("capital", 500));
-const feeRate = ref(getInitialValue("feeRate", 0.0005));
+const feeRate = ref(getInitialValue("feeRate", 0.001));
 const currentPrice = ref(getInitialValue("currentPrice", 90000));
-const atrValue = ref(getInitialValue("atrValue", 5000));
+const atrValue = ref(getInitialValue("atrValue", 200));
 
 // ---------------------------------
 // 2. Watcher สำหรับบันทึกค่าลง Local Storage
