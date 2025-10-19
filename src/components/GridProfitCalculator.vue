@@ -25,9 +25,9 @@ const atrValue = ref(getInitialValue("atrValue", 200));
 const isIdealMode = ref(getInitialValue("isIdealMode", 0));
 
 // ATR Custom Factors
-const factorAggressive = ref(getInitialValue("factorAggressive", 0.1));
-const factorBalanced = ref(getInitialValue("factorBalanced", 0.22));
-const factorConservative = ref(getInitialValue("factorConservative", 0.5));
+const factorAggressive = ref(getInitialValue("factorAggressive", 0.25));
+const factorBalanced = ref(getInitialValue("factorBalanced", 0.5));
+const factorConservative = ref(getInitialValue("factorConservative", 1.0));
 
 // Goal Seeker Input (Percent Focus)
 const dailyGoalPct = ref(getInitialValue("dailyGoalPct", 0.2));
@@ -191,6 +191,9 @@ const typeLabels = {
 };
 const RISK_ADJUSTMENT_FACTOR = 0.6;
 
+// ========================================================
+// START: โค้ดส่วนที่แก้ไข
+// ========================================================
 const calculateAtrGrid = (recommendedGap) => {
   const range = priceUpper.value - priceLower.value;
 
@@ -200,6 +203,7 @@ const calculateAtrGrid = (recommendedGap) => {
       netProfit: 0,
       netProfitPct: 0,
       profitPerDay: 0,
+      profitPerDayPct: 0, // เพิ่มค่าเริ่มต้น
       expectedTrades: 0,
       recommendedGap: 0,
       investmentPerGrid: 0,
@@ -214,6 +218,7 @@ const calculateAtrGrid = (recommendedGap) => {
       netProfit: 0,
       netProfitPct: 0,
       profitPerDay: 0,
+      profitPerDayPct: 0, // เพิ่มค่าเริ่มต้น
       expectedTrades: 0,
       recommendedGap: recommendedGap,
       investmentPerGrid: 0,
@@ -239,18 +244,25 @@ const calculateAtrGrid = (recommendedGap) => {
   const adjustmentFactor = isIdealMode.value ? 1.0 : RISK_ADJUSTMENT_FACTOR;
 
   // --- ผลลัพธ์สุดท้ายที่ปรับปรุงแล้ว ---
+  const profitPerDay = profitPerDayIdeal * adjustmentFactor;
+  // เพิ่มการคำนวณ % Profit/Day
+  const profitPerDayPct =
+    capital.value > 0 ? (profitPerDay / capital.value) * 100 : 0;
+
   return {
     grids: recommendedGrids,
     netProfit: netProfit,
     netProfitPct: netProfitPct,
-
-    profitPerDay: profitPerDayIdeal * adjustmentFactor,
+    profitPerDay: profitPerDay,
+    profitPerDayPct: profitPerDayPct, // ส่งค่า % ที่คำนวณได้ออกไป
     expectedTrades: expectedTradesIdeal * adjustmentFactor,
-
     recommendedGap: recommendedGap,
     investmentPerGrid: inv,
   };
 };
+// ========================================================
+// END: โค้ดส่วนที่แก้ไข
+// ========================================================
 
 const atrRecommendations = computed(() => {
   if (atrValue.value <= 0 || priceUpper.value <= priceLower.value) return {};
@@ -288,7 +300,8 @@ const goalSeekerResults = computed(() => {
     return [];
   }
 
-  const gapFactors = [0.1, 0.22, 0.5];
+  const gapFactors = [0.25, 0.5, 1.0]; // High, Normal, Low
+
   const results = [];
   const adjustmentFactor = isIdealMode.value ? 1.0 : RISK_ADJUSTMENT_FACTOR;
 
@@ -319,21 +332,15 @@ const goalSeekerResults = computed(() => {
     const finalNetProfitPct =
       finalInvPerGrid > 0 ? (finalNetProfit / finalInvPerGrid) * 100 : 0;
 
-    // ========================================================
-    // START: โค้ดส่วนที่เพิ่มเข้ามา
-    // ========================================================
     const calculatedDailyProfitUSDT = finalNetProfit * tradesPerDayAdjusted;
     const calculatedDailyProfitPct =
       (calculatedDailyProfitUSDT / capitalValue) * 100;
-    // ========================================================
-    // END: โค้ดส่วนที่เพิ่มเข้ามา
-    // ========================================================
 
     results.push({
       label:
-        factor === 0.5
+        factor === 1.0
           ? "เทรดน้อย (Low)"
-          : factor === 0.22
+          : factor === 0.5
           ? "มาตรฐาน (Normal)"
           : "เทรดถี่ (High)",
       tradesPerDay: tradesPerDayAdjusted,
@@ -343,7 +350,6 @@ const goalSeekerResults = computed(() => {
       finalNetProfit: finalNetProfit,
       finalNetProfitPct: finalNetProfitPct,
       tradesPerDayIdeal: tradesPerDayIdeal,
-      // เพิ่มค่าที่คำนวณใหม่เข้าไปใน object
       calculatedDailyProfitUSDT: calculatedDailyProfitUSDT,
       calculatedDailyProfitPct: calculatedDailyProfitPct,
       debug_NP_Req: netProfitReq,
@@ -422,7 +428,7 @@ const goalSeekerResults = computed(() => {
     <hr class="border-gray-300 my-4" />
 
     <div class="input-section bg-white p-3 rounded-xl shadow-lg">
-      <h3 class="font-medium text-center text-gray-700 mb-3">
+      <h3 class="text-lg font-medium text-center text-gray-700 mb-3">
         1. Input Parameters ({{ gridType }} Grid)
       </h3>
 
@@ -573,8 +579,8 @@ const goalSeekerResults = computed(() => {
         @click="isATRRecsOpen = !isATRRecsOpen"
         class="flex justify-between items-center cursor-pointer pb-2 border-b border-gray-200"
       >
-        <h3 class="font-medium text-gray-700">
-          2. ATR Grid Recommendations <br />({{
+        <h3 class="text-lg font-medium text-gray-700">
+          2. ATR Grid Recommendations ({{
             (priceUpper - priceLower).toFixed(0)
           }}
           USDT Range)
@@ -651,21 +657,20 @@ const goalSeekerResults = computed(() => {
             <table class="w-full text-sm mt-2 border-t border-dotted">
               <tbody>
                 <tr>
-                  <td class="pt-2 pb-1 text-gray-600">ทุน/ไม้:</td>
-                  <td
-                    class="pt-2 pb-1 text-right font-bold text-base text-gray-800"
-                  >
-                    {{ result.investmentPerGrid.toFixed(2) }} USDT
-                  </td>
-                </tr>
-                <tr>
-                  <td class="py-1 text-gray-600">Grids:</td>
-                  <td class="py-1 text-right font-bold text-base">
+                  <td class="py-1 text-gray-600">จำนวน Grids:</td>
+                  <td class="py-1 text-right font-bold text-lg text-blue-700">
                     {{ result.grids }}
                   </td>
                 </tr>
                 <tr>
-                  <td class="py-1 text-gray-600">Trades/Day (Expected):</td>
+                  <td class="py-1 text-gray-600">ระยะ Gap:</td>
+                  <td class="py-1 text-right font-bold text-green-700">
+                    {{ result.recommendedGap.toFixed(2) }} USDT
+                  </td>
+                </tr>
+
+                <tr>
+                  <td class="py-1 text-gray-600">จำนวนไม้/วัน:</td>
                   <td
                     class="py-1 text-right font-bold text-base"
                     :class="{
@@ -677,7 +682,15 @@ const goalSeekerResults = computed(() => {
                   </td>
                 </tr>
                 <tr>
-                  <td class="pt-2 text-gray-600">Net Profit/Grid:</td>
+                  <td class="pt-2 pb-1 text-gray-600">ทุน/ไม้:</td>
+                  <td
+                    class="pt-2 pb-1 text-right font-bold text-base text-gray-800"
+                  >
+                    {{ result.investmentPerGrid.toFixed(2) }} USDT
+                  </td>
+                </tr>
+                <tr>
+                  <td class="pt-2 text-gray-600">กำไร/ไม้:</td>
                   <td class="pt-2 text-right font-bold">
                     {{ result.netProfit.toFixed(4) }} USDT
                     <span class="text-gray-600 font-normal"
@@ -686,11 +699,14 @@ const goalSeekerResults = computed(() => {
                   </td>
                 </tr>
                 <tr class="border-t border-dotted">
-                  <td class="py-1 text-gray-600">Profit/Day:</td>
+                  <td class="py-1 text-gray-600">กำไร/วัน:</td>
                   <td
                     class="py-1 text-right font-bold text-base text-purple-700"
                   >
                     {{ result.profitPerDay.toFixed(2) }} USDT
+                    <span class="text-gray-600 font-normal"
+                      >({{ result.profitPerDayPct.toFixed(2) }}%)</span
+                    >
                   </td>
                 </tr>
               </tbody>
@@ -712,7 +728,7 @@ const goalSeekerResults = computed(() => {
         @click="isGoalSeekerOpen = !isGoalSeekerOpen"
         class="flex justify-between items-center cursor-pointer pb-2 border-b border-gray-200"
       >
-        <h3 class="font-medium text-gray-700">
+        <h3 class="text-lg font-medium text-gray-700">
           3. ATR Goal Seeker (ค้นหากริดตามเป้าหมาย)
         </h3>
         <svg
@@ -770,40 +786,52 @@ const goalSeekerResults = computed(() => {
           <div
             v-for="(result, index) in goalSeekerResults"
             :key="index"
-            class="border rounded-lg p-3 bg-indigo-50 border-indigo-400"
+            class="border rounded-lg p-3"
+            :class="{
+              'border-red-400 bg-red-50': result.label === 'เทรดถี่ (High)',
+              'border-green-400 bg-green-50':
+                result.label === 'มาตรฐาน (Normal)',
+              'border-blue-400 bg-blue-50': result.label === 'เทรดน้อย (Low)',
+            }"
           >
-            <p class="font-bold text-sm text-indigo-700 mb-2">
+            <p
+              class="font-bold text-sm mb-2"
+              :class="{
+                'text-red-700': result.label === 'เทรดถี่ (High)',
+                'text-green-700': result.label === 'มาตรฐาน (Normal)',
+                'text-blue-700': result.label === 'เทรดน้อย (Low)',
+              }"
+            >
               {{ result.label }}
             </p>
-
             <table class="w-full text-sm mt-2 border-t border-dotted">
               <tbody>
                 <tr>
-                  <td class="pt-2 pb-1 text-gray-600">Trades/Day (Target):</td>
-                  <td class="pt-2 pb-1 text-right font-bold text-base">
-                    {{ result.tradesPerDay.toFixed(1) }}
-                  </td>
-                </tr>
-                <tr>
-                  <td class="py-1 text-gray-600">Grids ที่ต้องใช้:</td>
+                  <td class="py-1 text-gray-600">จำนวน Grids:</td>
                   <td class="py-1 text-right font-bold text-lg text-blue-700">
                     {{ result.requiredGrids }}
                   </td>
                 </tr>
                 <tr>
-                  <td class="py-1 text-gray-600">ทุน/ไม้ ที่ใช้:</td>
-                  <td class="py-1 text-right font-bold text-gray-800">
-                    {{ result.finalInvPerGrid.toFixed(2) }} USDT
-                  </td>
-                </tr>
-                <tr>
-                  <td class="py-1 text-gray-600">Gap:</td>
+                  <td class="py-1 text-gray-600">ระยะ Gap:</td>
                   <td class="py-1 text-right font-bold text-green-700">
                     {{ result.requiredGap.toFixed(2) }} USDT
                   </td>
                 </tr>
                 <tr>
-                  <td class="py-1 text-gray-600">กำไร/Grid:</td>
+                  <td class="pt-2 pb-1 text-gray-600">จำนวนไม้/วัน:</td>
+                  <td class="pt-2 pb-1 text-right font-bold text-base">
+                    {{ result.tradesPerDay.toFixed(1) }}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="py-1 text-gray-600">ทุน/ไม้:</td>
+                  <td class="py-1 text-right font-bold text-gray-800">
+                    {{ result.finalInvPerGrid.toFixed(2) }} USDT
+                  </td>
+                </tr>
+                <tr>
+                  <td class="py-1 text-gray-600">กำไรขั้นต้น/ไม้:</td>
                   <td class="py-1 text-right font-bold text-red-500">
                     {{ result.finalNetProfit.toFixed(4) }} USDT
                     <span class="text-gray-600 font-normal"
