@@ -765,6 +765,7 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
                     <th class="py-1 text-left">กริด</th>
                     <th class="py-1 text-right">Profit/Grid</th>
                     <th class="py-1 text-right">ไม้/วัน</th>
+                    <th class="py-1 text-right">กำไรกริด</th>
                     <th class="py-1 text-right">กริด %/วัน</th>
                     <th class="py-1 text-right">รวม %</th>
                     <th></th>
@@ -776,6 +777,7 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
                     <td class="py-1">{{ r.grids }}<span v-if="r.isBest"> ★</span></td>
                     <td class="py-1 text-right">{{ r.profitMin.toFixed(2) }}%</td>
                     <td class="py-1 text-right">{{ fmt(r.tradesPerDay, 1) }}</td>
+                    <td class="py-1 text-right text-purple-700">{{ fmt(r.gridProfit) }}</td>
                     <td class="py-1 text-right text-purple-700">{{ fmt(r.gridProfitPerDayPct, 3) }}</td>
                     <td class="py-1 text-right" :class="signClass(r.totalPnlPct)">{{ fmt(r.totalPnlPct) }}</td>
                     <td class="py-1 text-right">
@@ -787,7 +789,7 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
               </table>
             </div>
             <p class="text-xs text-gray-400 mt-1">
-              ★ = กำไรกริดสูงสุดในช่วงที่ทดสอบ ถ้าหลายค่าได้ใกล้เคียงกัน ให้เลือกค่าที่มี Profit/Grid ≥ 0.5% จะเผื่อค่าธรรมเนียมได้ดีกว่า
+              กำไรกริด = USDT ที่ได้จากการขายทำกำไรตลอดช่วงที่ทดสอบ · ★ = กำไรกริดสูงสุดในช่วงที่ทดสอบ ถ้าหลายค่าได้ใกล้เคียงกัน ให้เลือกค่าที่มี Profit/Grid ≥ 0.5% จะเผื่อค่าธรรมเนียมได้ดีกว่า
             </p>
           </div>
         </div>
