@@ -613,6 +613,12 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
                 <td class="py-0.5 text-right text-xs">{{ fmt(z.lowerPct, 1) }}% / +{{ fmt(z.upperPct, 1) }}%</td></tr>
               <tr><td class="py-0.5 text-gray-500">Number of Grids</td>
                 <td class="py-0.5 text-right font-bold">{{ z.grids }}</td></tr>
+              <tr v-if="z.plan"><td class="py-0.5 text-gray-500">ระยะห่าง/กริด</td>
+                <td class="py-0.5 text-right font-semibold text-green-700">
+                  <template v-if="z.mode === 'Arithmetic'">${{ fmtPrice(z.plan.gapLow) }}</template>
+                  <template v-else>${{ fmtPrice(z.plan.gapLow) }} – ${{ fmtPrice(z.plan.gapHigh) }}</template>
+                  <span class="text-xs text-gray-400 font-normal">({{ fmt((z.plan.gapLow / z.plan.levels[0]) * 100, 2) }}%)</span>
+                </td></tr>
               <tr><td class="py-0.5 text-gray-500">Mode</td>
                 <td class="py-0.5 text-right font-bold">{{ z.mode }}</td></tr>
               <tr><td class="py-0.5 text-gray-500">Investment</td>
