@@ -260,7 +260,10 @@ const calibration = computed(() => {
   if (!r || !p || !(r.tradesPerDay > 0)) return null;
   const mid = (r.startPrice + r.endPrice) / 2;
   const model = estimateTradesPerDay(s.atrValue, gapAtPrice(p.levels, mid));
-  return model > 0 ? r.tradesPerDay / model : null;
+  // นับเฉพาะวันที่ราคาอยู่ในกรอบ (นอกกรอบบอทไม่เทรด)
+  const inRange = r.inRangePct / 100;
+  if (!(model > 0) || inRange < 0.2) return null;
+  return r.tradesPerDay / inRange / model;
 });
 
 // ---------------------------------
@@ -695,22 +698,56 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
             <div class="grid grid-cols-2 gap-y-1">
               <span class="text-gray-600">ขายทำกำไร (ไม้)</span>
               <span class="text-right font-semibold">{{ btCurrent.sells }} ({{ fmt(btCurrent.tradesPerDay, 1) }}/วัน)</span>
-              <span class="text-gray-600">กำไรกริด</span>
-              <span class="text-right font-bold text-purple-700">
-                {{ fmt(btCurrent.gridProfit) }} USDT ({{ fmt(btCurrent.gridProfitPerDayPct, 3) }}%/วัน)
+
+              <span class="col-span-2 mt-2 text-xs font-semibold text-gray-500 border-t border-blue-200 pt-2">
+                กำไรจากบอท = กำไรกริด + มูลค่าเหรียญที่ถืออยู่เปลี่ยนไป
               </span>
-              <span class="text-gray-600">APR จากกริด</span>
-              <span class="text-right font-semibold">{{ fmt(btCurrent.gridApr, 1) }}%</span>
-              <span class="text-gray-600">กำไร/ขาดทุนที่ยังไม่รับรู้</span>
+              <span class="text-gray-600">กำไรกริด (ขายทำกำไรแล้ว)</span>
+              <span class="text-right font-bold text-purple-700">{{ fmt(btCurrent.gridProfit) }} USDT</span>
+              <span class="text-gray-500 text-xs pl-2">คิดเป็น</span>
+              <span class="text-right text-xs text-purple-700">
+                {{ fmt(btCurrent.gridProfitPerDayPct, 3) }}%/วัน · {{ fmt(btCurrent.gridApr, 1) }}%/ปี
+                (≈ {{ fmt(btCurrent.gridProfitPerDay * 365, 0) }} USDT/ปี)
+              </span>
+              <span class="text-gray-500 text-xs pl-2">เฉพาะช่วงที่อยู่ในกรอบ</span>
+              <span class="text-right text-xs">
+                <template v-if="btCurrent.inRangePct > 0">~{{ fmt(btCurrent.gridApr / (btCurrent.inRangePct / 100), 1) }}%/ปี</template>
+                <template v-else>-</template>
+              </span>
+              <span class="text-gray-600">กำไร/ขาดทุนจากราคาเหรียญ (ยังไม่ขาย)</span>
               <span class="text-right" :class="signClass(btCurrent.unrealized)">{{ fmt(btCurrent.unrealized) }} USDT</span>
-              <span class="text-gray-600">รวมทั้งหมด</span>
+              <span class="text-gray-800 font-semibold">รวมทั้งหมด</span>
               <span class="text-right font-bold" :class="signClass(btCurrent.totalPnl)">
                 {{ fmt(btCurrent.totalPnl) }} USDT ({{ fmt(btCurrent.totalPnlPct) }}%)
               </span>
-              <span class="text-gray-600">ถ้าถือเหรียญเฉยๆ</span>
-              <span class="text-right" :class="signClass(btCurrent.hodlPnlPct)">{{ fmt(btCurrent.hodlPnlPct) }}%</span>
-              <span class="text-gray-600">เวลาที่อยู่ในกรอบ</span>
-              <span class="text-right">{{ fmt(btCurrent.inRangePct, 0) }}%</span>
+
+              <span class="col-span-2 mt-2 text-xs font-semibold text-gray-500 border-t border-blue-200 pt-2">เทียบกับ</span>
+              <span class="text-gray-600">ซื้อเหรียญถือไว้เฉยๆ</span>
+              <span class="text-right" :class="signClass(btCurrent.hodlPnlPct)">
+                {{ fmt(btCurrent.hodlPnlPct * s.capital / 100) }} USDT ({{ fmt(btCurrent.hodlPnlPct) }}%)
+              </span>
+              <span class="col-span-2 text-xs text-gray-500">
+                = เอาทุน {{ fmt(s.capital, 0) }} USDT ซื้อเหรียญทั้งหมดที่ราคา {{ fmtPrice(btCurrent.startPrice) }}
+                (วันแรกของ backtest) แล้วถือจนถึงราคาล่าสุด {{ fmtPrice(btCurrent.endPrice) }}
+              </span>
+              <span class="col-span-2 text-xs font-semibold rounded p-1 mt-1"
+                :class="btCurrent.totalPnlPct >= btCurrent.hodlPnlPct ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'">
+                <template v-if="btCurrent.totalPnlPct >= btCurrent.hodlPnlPct">
+                  บอทชนะการถือเฉยๆ {{ fmt(btCurrent.totalPnlPct - btCurrent.hodlPnlPct) }}%
+                </template>
+                <template v-else>
+                  ถือเฉยๆ ได้มากกว่าบอท {{ fmt(btCurrent.hodlPnlPct - btCurrent.totalPnlPct) }}%
+                  (ช่วงราคาขึ้นแรง บอทขายเหรียญออกไประหว่างทาง)
+                </template>
+              </span>
+
+              <span class="text-gray-600 mt-2">เวลาที่ราคาอยู่ในกรอบ</span>
+              <span class="text-right mt-2" :class="btCurrent.inRangePct < 70 ? 'text-red-600 font-semibold' : ''">
+                {{ fmt(btCurrent.inRangePct, 0) }}% (~{{ fmt(btCurrent.days * btCurrent.inRangePct / 100, 0) }} จาก {{ fmt(btCurrent.days, 0) }} วัน)
+              </span>
+              <span v-if="btCurrent.inRangePct < 70" class="col-span-2 text-xs text-gray-500">
+                ช่วงที่ราคาอยู่นอกกรอบบอทจะไม่เทรด ลองย้อนหลังให้สั้นลง หรือขยายกรอบให้ครอบช่วงราคาที่ทดสอบ
+              </span>
             </div>
             <div v-if="calibration" class="mt-2 pt-2 border-t border-blue-200 text-xs flex items-center justify-between">
               <span class="text-gray-600">จำนวนไม้จริง ÷ ที่โมเดลทาย = <b>{{ fmt(calibration) }}</b></span>
