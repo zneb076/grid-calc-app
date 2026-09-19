@@ -11,6 +11,7 @@ import {
 } from "../lib/grid.js";
 import { fetchMarketSnapshot, fetchKlines } from "../lib/binance.js";
 import { backtestGrid } from "../lib/backtest.js";
+import { analyzeMarket, recommendZones } from "../lib/advisor.js";
 
 // ---------------------------------
 // 1. สถานะ (แยกตามคู่เหรียญ) + Local Storage
@@ -96,6 +97,71 @@ const setRange = (lower, upper) => {
   s.priceUpper = tick(upper);
 };
 const setRangeAtr = (k) => setRange(s.currentPrice - k * s.atrValue, s.currentPrice + k * s.atrValue);
+
+// ---------------------------------
+// 0. วิเคราะห์ตลาด + แนะนำ 3 โซน (ทุนใช้ตามที่ผู้ใช้กรอก)
+// ---------------------------------
+const analysis = computed(() => {
+  const m = market.value;
+  if (!m?.daily?.length || !(m.atr14 > 0)) return null;
+  return analyzeMarket(m.daily, m.price, m.atr14);
+});
+
+const recommendedZoneKey = computed(() => {
+  const a = analysis.value;
+  if (!a) return null;
+  if (a.suitability.level === "good") return "mid";
+  if (a.suitability.level === "ok") return "mid";
+  return "long";
+});
+
+const zones = computed(() => {
+  const a = analysis.value;
+  if (!a) return [];
+  const P = a.price;
+  return recommendZones(market.value.daily, a, { fee: common.feeRate, tick }).map((z) => {
+    const cfg = (grids) => ({
+      lower: z.lower,
+      upper: z.upper,
+      grids,
+      mode: z.mode,
+      investment: s.capital,
+      fee: common.feeRate,
+      startPrice: P,
+      stepSize: filters.value.stepSize,
+      tickSize: filters.value.tickSize,
+      minNotional: filters.value.minNotional,
+    });
+    // ลดจำนวนกริดลงถ้าทุนไม่พอขั้นต่ำต่อออเดอร์
+    let grids = z.grids;
+    let p = computePlan(cfg(grids));
+    while (p && grids > 3 && !(p.qty > 0 && p.minNotionalOk)) p = computePlan(cfg(--grids));
+    const reducedGrids = grids < z.grids;
+    const est = p ? estimate(p.levels, p.qty, P) : null;
+    const center = (z.upper + z.lower) / 2;
+    return {
+      ...z,
+      grids,
+      reducedGrids,
+      plan: p,
+      est,
+      ok: !!p && p.qty > 0 && p.minNotionalOk,
+      daysInRange: expectedDaysInRange(a.atr, z.upper - z.lower, P - center),
+      lowerPct: ((z.lower - P) / P) * 100,
+      upperPct: ((z.upper - P) / P) * 100,
+      stopLossPct: ((z.stopLoss - P) / P) * 100,
+    };
+  });
+});
+
+const applyZone = (z) => {
+  s.priceLower = z.lower;
+  s.priceUpper = z.upper;
+  s.gridCount = z.grids;
+  s.currentPrice = analysis.value.price;
+  common.gridType = z.mode;
+  document.getElementById("binance-values")?.scrollIntoView({ behavior: "smooth", block: "start" });
+};
 
 // ---------------------------------
 // 3. แผนที่จะวางใน Binance (สูตรตรงกับหน้า Details ของ Binance)
@@ -482,8 +548,118 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
       </div>
     </header>
 
+
+    <!-- ⭐ วิเคราะห์ + แนะนำโซน -->
+    <section class="mb-6">
+      <div class="mb-3">
+        <h2 class="text-lg lg:text-xl font-semibold text-gray-800">⭐ แนะนำการวางจากการวิเคราะห์ตลาด</h2>
+        <p class="text-sm text-gray-500">วิเคราะห์เทรนด์และ indicator จาก Binance แล้วเลือกกรอบให้ 3 แบบ กรอกทุนแล้วกด "ใช้โซนนี้" เพื่อเอาไปวางได้เลย</p>
+      </div>
+      <div v-if="analysis" class="lg:grid lg:grid-cols-4 lg:gap-5 lg:items-start">
+        <!-- สรุปการวิเคราะห์ -->
+        <div class="bg-white p-3 rounded-xl shadow-lg border border-gray-200 mb-4 text-sm">
+          <label for="capitalTop" class="block text-xs font-medium text-gray-600 mb-1">เงินทุนที่จะใช้ (USDT):</label>
+          <input id="capitalTop" type="number" v-model.number="s.capital" min="0" step="any"
+            class="w-full p-2 mb-3 border border-purple-500 rounded-lg text-lg font-bold text-center" />
+
+          <p class="font-semibold text-gray-800 mb-1">📊 ภาพรวม {{ symbol }}</p>
+          <div class="rounded-lg p-2 mb-2 text-xs font-semibold"
+            :class="{
+              'bg-green-100 text-green-800': analysis.suitability.level === 'good',
+              'bg-yellow-100 text-yellow-800': analysis.suitability.level === 'ok',
+              'bg-red-100 text-red-800': analysis.suitability.level === 'caution',
+            }">
+            {{ analysis.suitability.level === "good" ? "✅" : analysis.suitability.level === "ok" ? "🟡" : "⚠️" }}
+            {{ analysis.suitability.text }}
+          </div>
+          <div class="grid grid-cols-2 gap-y-1">
+            <span class="text-gray-500">แนวโน้ม</span>
+            <span class="text-right font-bold"
+              :class="{ 'text-green-700': analysis.trend === 'up', 'text-red-600': analysis.trend === 'down', 'text-gray-700': analysis.trend === 'sideway' }">
+              {{ analysis.trendLabel }}
+            </span>
+            <span class="text-gray-500">ADX (ความแรงเทรนด์)</span>
+            <span class="text-right">{{ fmt(analysis.adx, 1) }}
+              <span class="text-xs text-gray-400">{{ analysis.adx < 20 ? "อ่อน" : analysis.adx < 25 ? "ปานกลาง" : "แรง" }}</span></span>
+            <span class="text-gray-500">RSI(14)</span>
+            <span class="text-right">{{ fmt(analysis.rsi, 1) }} <span class="text-xs text-gray-400">{{ analysis.rsiLabel }}</span></span>
+            <span class="text-gray-500">EMA 20 / 50 / 200</span>
+            <span class="text-right text-xs">{{ fmt(analysis.ema20, 0) }} / {{ fmt(analysis.ema50, 0) }} / {{ fmt(analysis.ema200, 0) }}</span>
+            <span class="text-gray-500">ATR (ผันผวน/วัน)</span>
+            <span class="text-right">{{ fmt(analysis.atrPct, 2) }}%</span>
+            <span v-if="analysis.bb" class="text-gray-500">Bollinger (20,2)</span>
+            <span v-if="analysis.bb" class="text-right text-xs">{{ fmt(analysis.bb.lower, 0) }} – {{ fmt(analysis.bb.upper, 0) }}</span>
+          </div>
+          <ul class="mt-2 text-xs space-y-0.5">
+            <li v-for="c in analysis.checks" :key="c.text" :class="c.ok ? 'text-green-700' : 'text-red-600'">
+              {{ c.ok ? "▲ " + c.text : "▼ " + c.textNeg }}
+            </li>
+          </ul>
+        </div>
+
+        <!-- 3 โซน -->
+        <div v-for="z in zones" :key="z.key" class="bg-white p-3 rounded-xl shadow-lg mb-4 text-sm border-2"
+          :class="z.key === recommendedZoneKey ? 'border-green-500' : 'border-gray-200'">
+          <div class="flex justify-between items-center">
+            <p class="font-bold text-base text-gray-800">{{ z.label }}</p>
+            <span v-if="z.key === recommendedZoneKey" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-600 text-white">แนะนำตอนนี้</span>
+          </div>
+          <p class="text-xs text-gray-500 mb-2">{{ z.desc }}</p>
+          <table class="w-full">
+            <tbody>
+              <tr><td class="py-0.5 text-gray-500">Price Range</td>
+                <td class="py-0.5 text-right font-bold">{{ fmtPrice(z.lower) }} – {{ fmtPrice(z.upper) }}</td></tr>
+              <tr><td class="py-0.5 text-gray-500 text-xs pl-2">จากราคาตอนนี้</td>
+                <td class="py-0.5 text-right text-xs">{{ fmt(z.lowerPct, 1) }}% / +{{ fmt(z.upperPct, 1) }}%</td></tr>
+              <tr><td class="py-0.5 text-gray-500">Number of Grids</td>
+                <td class="py-0.5 text-right font-bold">{{ z.grids }}</td></tr>
+              <tr><td class="py-0.5 text-gray-500">Mode</td>
+                <td class="py-0.5 text-right font-bold">{{ z.mode }}</td></tr>
+              <tr><td class="py-0.5 text-gray-500">Investment</td>
+                <td class="py-0.5 text-right font-bold">{{ fmt(s.capital, 0) }} USDT</td></tr>
+              <tr v-if="z.plan"><td class="py-0.5 text-gray-500">Profit/Grid</td>
+                <td class="py-0.5 text-right">{{ z.plan.profit.min.toFixed(2) }}%<template v-if="z.mode === 'Arithmetic'"> – {{ z.plan.profit.max.toFixed(2) }}%</template></td></tr>
+              <tr v-if="z.plan"><td class="py-0.5 text-gray-500">Qty/Order</td>
+                <td class="py-0.5 text-right">{{ fmtQty(z.plan.qty) }} {{ base }}</td></tr>
+              <tr class="border-t"><td class="py-0.5 text-gray-500">Stop Loss (แนะนำ)</td>
+                <td class="py-0.5 text-right">{{ fmtPrice(z.stopLoss) }} <span class="text-xs text-gray-400">({{ fmt(z.stopLossPct, 1) }}%)</span></td></tr>
+              <tr><td class="py-0.5 text-gray-500">Trailing Up</td>
+                <td class="py-0.5 text-right">{{ z.trailingUp ? "เปิด" : "ปิด" }}</td></tr>
+            </tbody>
+          </table>
+          <div v-if="z.est" class="mt-2 p-2 rounded-lg bg-gray-50 border grid grid-cols-2 gap-y-0.5 text-xs">
+            <span class="text-gray-600">ไม้/วัน (คาด)</span>
+            <span class="text-right">{{ fmt(z.est.trades, 1) }}</span>
+            <span class="text-gray-600">กำไรกริด (คาด)</span>
+            <span class="text-right font-semibold text-purple-700">{{ fmt(z.est.perDay) }} USDT/วัน · ~{{ fmt(z.est.perDayPct * 365, 0) }}%/ปี</span>
+            <span class="text-gray-600">คาดว่าอยู่ในกรอบ</span>
+            <span class="text-right">{{ fmtDays(z.daysInRange) }}</span>
+            <span class="text-gray-600">ย้อนหลัง {{ z.srDays }} วัน อยู่ในกรอบ</span>
+            <span class="text-right">{{ fmt(z.inRangePast, 0) }}% ของวัน</span>
+          </div>
+          <ul class="mt-2 text-xs text-gray-500 list-disc pl-4">
+            <li v-for="n in z.notes" :key="n">{{ n }}</li>
+            <li v-if="z.reducedGrids">ลดจำนวนกริดลงให้พอกับทุน (ขั้นต่ำ {{ filters.minNotional }} USDT/ออเดอร์)</li>
+            <li v-if="z.trailingUp">ขาขึ้น: เปิด Trailing Up ให้กรอบเลื่อนตามราคาได้</li>
+          </ul>
+          <p v-if="!z.ok" class="text-xs text-red-600 mt-1">ทุนน้อยเกินไปสำหรับโซนนี้ ให้เพิ่มทุน</p>
+          <button v-else @click="applyZone(z)"
+            class="mt-2 w-full py-2 rounded-lg font-semibold text-white"
+            :class="z.key === recommendedZoneKey ? 'bg-green-600' : 'bg-gray-700'">
+            ✅ ใช้โซนนี้
+          </button>
+        </div>
+      </div>
+      <div v-else class="bg-white p-4 rounded-xl shadow text-sm text-gray-500 text-center">
+        {{ marketLoading ? "กำลังวิเคราะห์ข้อมูลจาก Binance..." : marketError || "ยังไม่มีข้อมูลตลาด กด 🔄 รีเฟรช ในกล่อง ①" }}
+      </div>
+      <p class="text-xs text-gray-400 mt-1">
+        การวิเคราะห์นี้อิงสถิติและ indicator จากข้อมูลย้อนหลัง ไม่ใช่คำแนะนำการลงทุน ตลาดเปลี่ยนได้เสมอ ควรกดรีเฟรชก่อนวางทุกครั้ง
+      </p>
+    </section>
+
     <p class="hidden lg:block text-sm text-gray-500 mb-3">
-      ทำตามลำดับ ① → ② → ③ แล้วกรอกค่าในกล่อง ③ ลง Binance · ④ Backtest ใช้เช็คย้อนหลังด้วยราคาจริง
+      ตั้งค่าเอง: ทำตามลำดับ ① → ② → ③ แล้วกรอกค่าในกล่อง ③ ลง Binance · ④ Backtest ใช้เช็คย้อนหลังด้วยราคาจริง
     </p>
 
     <!-- ขั้นตอนหลัก -->
@@ -608,7 +784,7 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
       </div>
       <div>
         <!-- ค่าที่จะกรอกใน Binance -->
-        <div class="bg-white p-3 rounded-xl shadow-lg border-2 border-yellow-400 mb-4">
+        <div id="binance-values" class="bg-white p-3 rounded-xl shadow-lg border-2 border-yellow-400 mb-4 scroll-mt-4">
           <h3 class="text-lg font-medium text-center text-gray-800 mb-2">③ ค่าที่จะกรอกใน Binance</h3>
           <div v-if="plan" class="text-sm">
             <table class="w-full">
