@@ -640,8 +640,32 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
             <span class="text-right font-semibold text-purple-700">{{ fmt(z.est.perDay) }} USDT/วัน · ~{{ fmt(z.est.perDayPct * 365, 0) }}%/ปี</span>
             <span class="text-gray-600">คาดว่าอยู่ในกรอบ</span>
             <span class="text-right">{{ fmtDays(z.daysInRange) }}</span>
-            <span class="text-gray-600">ย้อนหลัง {{ z.srDays }} วัน อยู่ในกรอบ</span>
-            <span class="text-right">{{ fmt(z.inRangePast, 0) }}% ของวัน</span>
+          </div>
+          <div v-if="z.history" class="mt-2 p-2 rounded-lg border text-xs"
+            :class="z.history.avgInRange >= 80 ? 'bg-green-50 border-green-200' : z.history.avgInRange >= 60 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'">
+            <p class="font-semibold text-gray-700 mb-1">
+              📈 สถิติย้อนหลัง {{ fmt(z.history.years, 0) }} ปี
+              <span class="font-normal text-gray-500">(ลองวางกรอบขนาดนี้ {{ fmt(z.history.tries, 0) }} ครั้ง)</span>
+            </p>
+            <div class="flex justify-between">
+              <span>ราคาอยู่ในกรอบเฉลี่ย</span>
+              <span class="font-bold">{{ fmt(z.history.avgInRange, 0) }}%
+                {{ z.history.avgInRange >= 80 ? "🟢 ดี" : z.history.avgInRange >= 60 ? "🟡 พอใช้" : "🔴 เสี่ยง" }}</span>
+            </div>
+            <div class="h-2 rounded bg-gray-200 my-1 overflow-hidden">
+              <div class="h-2 rounded"
+                :class="z.history.avgInRange >= 80 ? 'bg-green-500' : z.history.avgInRange >= 60 ? 'bg-yellow-500' : 'bg-red-500'"
+                :style="{ width: z.history.avgInRange + '%' }"></div>
+            </div>
+            <div class="flex justify-between">
+              <span>อยู่ครบ {{ z.horizon }} วันไม่หลุดเลย</span>
+              <span class="font-semibold">{{ fmt(z.history.survived, 0) }}% ของครั้ง</span>
+            </div>
+            <p class="mt-1 text-gray-600">
+              แปลว่า: วางไว้ {{ z.horizon }} วัน บอทจะได้ทำงานราว
+              <b>{{ fmt((z.horizon * z.history.avgInRange) / 100, 0) }} วัน</b> อีกราว
+              {{ fmt(z.horizon - (z.horizon * z.history.avgInRange) / 100, 0) }} วันราคาอยู่นอกกรอบ (บอทหยุดรอ)
+            </p>
           </div>
           <ul class="mt-2 text-xs text-gray-500 list-disc pl-4">
             <li v-for="n in z.notes" :key="n">{{ n }}</li>
@@ -660,6 +684,7 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
         {{ marketLoading ? "กำลังวิเคราะห์ข้อมูลจาก Binance..." : marketError || "ยังไม่มีข้อมูลตลาด กด 🔄 รีเฟรช ในกล่อง ①" }}
       </div>
       <p class="text-xs text-gray-400 mt-1">
+        วิธีอ่านสถิติ: "อยู่ในกรอบเฉลี่ย" ยิ่งสูงยิ่งดี (บอทได้ทำงานนาน) · "ไม่หลุดเลย" ต่ำเป็นเรื่องปกติ เพราะราคามักแตะขอบแล้วกลับเข้ามา ·
         การวิเคราะห์นี้อิงสถิติและ indicator จากข้อมูลย้อนหลัง ไม่ใช่คำแนะนำการลงทุน ตลาดเปลี่ยนได้เสมอ ควรกดรีเฟรชก่อนวางทุกครั้ง
       </p>
     </section>

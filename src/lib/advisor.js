@@ -92,6 +92,37 @@ const hiLo = (daily, n) => {
   return { high: Math.max(...s.map((c) => c.h)), low: Math.min(...s.map((c) => c.l)) };
 };
 
+// ลองวางกรอบขนาดเดียวกัน (−lowPct / +upPct จากราคาเริ่ม) ทุกวันในอดีต แล้วดู H วันถัดไป
+// avgInRange = % ของวันที่ราคาปิดอยู่ในกรอบ (เฉลี่ยทุกครั้ง)
+// survived   = % ของครั้งที่ราคาไม่แตะขอบเลยตลอด H วัน
+export const historicalZoneStats = (daily, lowPct, upPct, H) => {
+  let tries = 0;
+  let survived = 0;
+  let inDays = 0;
+  let allDays = 0;
+  for (let i = 0; i + H < daily.length; i++) {
+    const p0 = daily[i].c;
+    const lo = p0 * (1 + lowPct / 100);
+    const up = p0 * (1 + upPct / 100);
+    let alive = true;
+    for (let j = i + 1; j <= i + H; j++) {
+      const c = daily[j];
+      allDays++;
+      if (c.c >= lo && c.c <= up) inDays++;
+      if (c.l < lo || c.h > up) alive = false;
+    }
+    tries++;
+    if (alive) survived++;
+  }
+  if (!tries) return null;
+  return {
+    tries,
+    years: daily.length / 365,
+    avgInRange: (inDays / allDays) * 100,
+    survived: (survived / tries) * 100,
+  };
+};
+
 export const recommendZones = (daily, m, { fee = 0.001, tick = (x) => x } = {}) => {
   const P = m.price;
   const sigma = m.atr / ATR_TO_SIGMA;
@@ -120,14 +151,12 @@ export const recommendZones = (daily, m, { fee = 0.001, tick = (x) => x } = {}) 
     const gapTarget = P * (z.net / 100 + 2 * fee);
     const grids = Math.max(3, Math.min(300, Math.round(width / gapTarget)));
 
-    // ย้อนหลังราคาปิดรายวันอยู่ในกรอบกี่ %
-    const past = daily.slice(-z.srDays);
-    const inRangePast = (past.filter((c) => c.c >= lower && c.c <= upper).length / past.length) * 100;
+    const history = historicalZoneStats(daily, ((lower - P) / P) * 100, ((upper - P) / P) * 100, z.horizon);
 
     const stopLoss = tick(lower - z.slAtr * m.atr);
     const trailingUp = m.trend === "up" && z.key !== "short";
     if (m.skew > 0.05) notes.push("เผื่อด้านบนมากกว่าตามแนวโน้มขาขึ้น");
     if (m.skew < -0.05) notes.push("เผื่อด้านล่างมากกว่าตามแนวโน้มขาลง/ความเสี่ยงย่อ");
-    return { ...z, lower, upper, grids, mode, stopLoss, trailingUp, inRangePast, notes, sr };
+    return { ...z, lower, upper, grids, mode, stopLoss, trailingUp, history, notes, sr };
   });
 };

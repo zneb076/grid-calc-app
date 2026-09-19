@@ -70,7 +70,7 @@ export const fetchMarketSnapshot = async (symbol) => {
   const [price, filters, daily] = await Promise.all([
     fetchPrice(symbol),
     fetchSymbolFilters(symbol),
-    fetchKlines(symbol, "1d", 300),
+    fetchKlines(symbol, "1d", 1100),
   ]);
   // Exclude today's unfinished candle from ATR.
   const closed = daily.slice(0, -1);
