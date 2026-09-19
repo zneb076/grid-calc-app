@@ -288,6 +288,7 @@ const atrRecommendations = computed(() => {
     const gapTarget = s.atrValue * Math.max(common[factorKey[type]], 0.01);
     const grids = Math.max(1, Math.round(range / gapTarget));
     const p = computePlan({ ...btConfig(grids), startPrice: s.currentPrice, minNotional: filters.value.minNotional });
+    if (!p) continue;
     const est = estimate(p.levels, p.qty, Math.min(Math.max(s.currentPrice, s.priceLower), s.priceUpper));
     const bt = candles.value.length ? backtestGrid(candles.value, btConfig(grids)) : null;
     results[type] = { grids, plan: p, est, bt };
@@ -299,6 +300,7 @@ const atrRecommendations = computed(() => {
 // 6. Goal Seeker: หากรอบราคาที่ต้องใช้เพื่อให้ได้กำไร/วันตามเป้า
 // ---------------------------------
 // กำไร/วัน ≈ eff·σ²/(2g²) · C/((R/g+1)·P) · (g − 2fP)  → แก้หา R (ความกว้างกรอบ)
+const MAX_BINANCE_GRIDS = 300;
 const goalProfiles = [
   { label: "เทรดถี่ (Profit/Grid 0.4%)", net: 0.4, color: "red" },
   { label: "มาตรฐาน (Profit/Grid 0.6%)", net: 0.6, color: "green" },
@@ -333,11 +335,19 @@ const goalSeekerResults = computed(() => {
     const width = grids * g;
     const lower = tick(P - width / 2);
     const upper = tick(P + width / 2);
-    const p = computePlan({ ...btConfig(grids), lower, upper, startPrice: P, minNotional: filters.value.minNotional });
-    const est = estimate(p.levels, p.qty, P);
+    // เป้าต่ำมาก → กรอบที่คำนวณได้กว้างจนราคาล่างติดลบ หรือกริดเกินที่ Binance ให้ตั้ง
+    const tooWide = !(lower > 0) || grids > MAX_BINANCE_GRIDS;
+    const p = tooWide
+      ? null
+      : computePlan({ ...btConfig(grids), lower, upper, startPrice: P, minNotional: filters.value.minNotional });
+    const est = p ? estimate(p.levels, p.qty, P) : null;
+    const tooNarrow = !tooWide && !(x > 2 && p && p.qty > 0 && p.minNotionalOk);
     return {
       ...prof,
-      feasible: x > 2 && p.qty > 0 && p.minNotionalOk,
+      feasible: !tooWide && !tooNarrow,
+      reason: tooWide
+        ? "เป้านี้ต่ำมาก ต้องใช้กรอบกว้างเกินจริง ตั้งกรอบกว้างๆ ตามใจได้เลย (หรือเพิ่มเป้าให้สูงขึ้น)"
+        : "เป้านี้สูงเกินไปสำหรับ Profit/Grid นี้ (กรอบจะแคบจนเหลือไม่กี่กริด หรือทุน/ออเดอร์ต่ำกว่าขั้นต่ำ)",
       grids,
       gap: g,
       lower,
@@ -385,8 +395,11 @@ const capitalProfiles = computed(() => {
       daysInRange: plan.value?.inRange ? expectedDaysInRange(atr, s.priceUpper - s.priceLower, P - center) : 0,
     });
   }
-  return profiles.map((pr) => {
-    const levels = buildLevels(pr.lower, pr.upper, pr.grids, common.gridType, filters.value.tickSize);
+  return profiles
+    .map((pr) => ({ ...pr, levels: buildLevels(pr.lower, pr.upper, pr.grids, common.gridType, filters.value.tickSize) }))
+    .filter((pr) => pr.levels.length >= 2)
+    .map((pr) => {
+    const levels = pr.levels;
     const sum = levels.reduce((a, x) => a + x, 0);
     const price = Math.min(Math.max(P, pr.lower), pr.upper);
     const gap = gapAtPrice(levels, price);
@@ -949,9 +962,7 @@ const signClass = (v) => (v >= 0 ? "text-green-700" : "text-red-600");
                 :class="{ 'text-red-700': r.color === 'red', 'text-green-700': r.color === 'green', 'text-blue-700': r.color === 'blue' }">
                 {{ r.label }}
               </p>
-              <p v-if="!r.feasible" class="text-xs text-red-600">
-                เป้านี้สูงเกินไปสำหรับ Profit/Grid นี้ (กรอบจะแคบจนเหลือไม่กี่กริด หรือทุน/ออเดอร์ต่ำกว่าขั้นต่ำ)
-              </p>
+              <p v-if="!r.feasible" class="text-xs text-red-600">{{ r.reason }}</p>
               <table v-else class="w-full text-sm border-t border-dotted">
                 <tbody>
                   <tr><td class="py-1 text-gray-600">Price Range:</td>

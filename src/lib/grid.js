@@ -13,10 +13,13 @@ export const roundStep = (value, step) => {
   return Number((Math.round(value / step) * step).toFixed(decimals));
 };
 
+export const MAX_GRIDS = 1000;
+
 // N grids => N+1 price levels.
 export const buildLevels = (lower, upper, grids, mode, tickSize = 0) => {
   const levels = [];
-  if (!(upper > lower) || !(lower > 0) || !(grids >= 1)) return levels;
+  // จำกัดจำนวนกริด กันหน้าเว็บค้างเมื่อกรอกค่าผิด
+  if (!(upper > lower) || !(lower > 0) || !(grids >= 1) || grids > MAX_GRIDS) return levels;
   const n = Math.floor(grids);
   if (mode === "Geometric") {
     const r = Math.pow(upper / lower, 1 / n);
